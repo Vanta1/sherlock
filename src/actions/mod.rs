@@ -1,16 +1,12 @@
 use std::collections::HashMap;
 
-use crate::ui::window::destroy_window;
 use teamslaunch::teamslaunch;
+use util::eval_exit;
 
 use crate::{
-    launcher::audio_launcher::MusicPlayerLauncher,
+    launcher::{audio_launcher::MusicPlayerLauncher, process_launcher::ProcessLauncher},
     loader::launcher_loader::CounterReader,
-    ui::{
-        user::{display_next, display_raw},
-        window::hide_window,
-    },
-    CONFIG,
+    ui::user::{display_next, display_raw},
 };
 
 pub mod applaunch;
@@ -44,8 +40,22 @@ pub fn execute_from_attrs(attrs: HashMap<String, String>) {
                 eval_exit();
             }
             "copy" => {
-                if let Some(result) = attrs.get("result") {
+                if let Some(field) = attrs.get("field") {
+                    if let Some(output) = attrs.get(field) {
+                        let _ = util::copy_to_clipboard(output.as_str());
+                    }
+                } else if let Some(result) = attrs.get("result") {
                     let _ = util::copy_to_clipboard(result.as_str());
+                }
+                eval_exit();
+            }
+            "print" => {
+                if let Some(field) = attrs.get("field") {
+                    if let Some(output) = attrs.get(field) {
+                        print!("{}", output);
+                    }
+                } else if let Some(result) = attrs.get("result") {
+                    print!("{}", result);
                 }
                 eval_exit();
             }
@@ -71,23 +81,22 @@ pub fn execute_from_attrs(attrs: HashMap<String, String>) {
                     let _ = MusicPlayerLauncher::playpause(player);
                 }
             }
+            "kill-process" => {
+                let _ = attrs
+                    .get("parent-pid")
+                    .and_then(|p| p.parse::<i32>().ok())
+                    .zip(attrs.get("child-pid").and_then(|c| c.parse::<i32>().ok()))
+                    .map(|(ppid, cpid)| ProcessLauncher::kill((ppid, cpid)));
+                eval_exit();
+            }
             _ => {
-                if let Some(out) = attrs.get("text_content") {
+                if let Some(out) = attrs.get("result") {
                     print!("{}", out);
                 } else {
                     println!("Return method \"{}\" not recognized", method);
                 }
                 eval_exit();
             }
-        }
-    }
-}
-
-fn eval_exit() {
-    if let Some(c) = CONFIG.get() {
-        match c.behavior.daemonize {
-            true => hide_window(true),
-            false => destroy_window(),
         }
     }
 }

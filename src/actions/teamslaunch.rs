@@ -1,7 +1,7 @@
-use crate::CONFIG;
+use crate::{actions::util::eval_exit, CONFIG};
 use std::{
     os::unix::process::CommandExt,
-    process::{exit, Command, Stdio},
+    process::{Command, Stdio},
 };
 
 pub fn teamslaunch(meeting_url: &str) {
@@ -13,7 +13,7 @@ pub fn teamslaunch(meeting_url: &str) {
 
         if parts.is_empty() {
             eprintln!("Error: Command is empty");
-            exit(1);
+            eval_exit();
         }
 
         let mut command = Command::new(&parts[0]);

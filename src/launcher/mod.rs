@@ -7,6 +7,7 @@ pub mod audio_launcher;
 pub mod bulk_text_launcher;
 pub mod clipboard_launcher;
 pub mod event_launcher;
+pub mod process_launcher;
 pub mod system_cmd_launcher;
 mod utils;
 pub mod web_launcher;
@@ -20,8 +21,9 @@ use crate::{
 use app_launcher::App;
 use audio_launcher::MusicPlayerLauncher;
 use bulk_text_launcher::BulkText;
-use clipboard_launcher::Clp;
+use clipboard_launcher::ClipboardLauncher;
 use event_launcher::EventLauncher;
+use process_launcher::ProcessLauncher;
 use system_cmd_launcher::SystemCommand;
 use web_launcher::Web;
 
@@ -32,9 +34,10 @@ pub enum LauncherType {
     Calc(()),
     BulkText(BulkText),
     SystemCommand(SystemCommand),
-    Clipboard(Clp),
+    Clipboard(ClipboardLauncher),
     EventLauncher(EventLauncher),
     MusicPlayerLauncher(MusicPlayerLauncher),
+    ProcessLauncher(ProcessLauncher),
     Empty,
 }
 
@@ -78,10 +81,9 @@ impl Launcher {
                 LauncherType::SystemCommand(cmd) => {
                     Tile::app_tile(self, keyword, cmd.commands.clone(), app_config)
                 }
-                LauncherType::Clipboard(clp) => {
-                    Tile::clipboard_tile(self, &clp.clipboard_content, keyword)
-                }
+                LauncherType::Clipboard(clp) => Tile::clipboard_tile(self, &clp, keyword),
                 LauncherType::EventLauncher(evl) => Tile::event_tile(self, keyword, evl),
+                LauncherType::ProcessLauncher(proc) => Tile::process_tile(self, keyword, &proc),
 
                 _ => Vec::new(),
             }
@@ -166,7 +168,5 @@ pub fn construct_tiles(keyword: &str, launchers: &[Launcher], mode: &str) -> Vec
             results.extend(result);
         }
     }
-    // results.sort_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap());
-    // results.into_iter().map(|r| r.row_item).collect()
     results
 }

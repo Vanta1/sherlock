@@ -4,8 +4,11 @@ calendar_client = "thunderbird"                                                 
 terminal = "kitty"                                                                                        # Used to start applications
 
 [debug]
-try_suppress_errors = false  # Disables the error screen for errors
+try_suppress_errors = false # Disables the error screen for errors
 try_suppress_warnings = true # Disables the error screen for warnings
+app_paths = [
+    "~/.local/share/applications/",
+] # Adds paths for Sherlock to look for desktop files
 
 [appearance]
 width = 900 # Sets the width of the main window
@@ -24,5 +27,12 @@ daemonize = false                              # Enables daemon mode
 animation = true                               # Enables startup animations
 
 [binds]
-prev = "None" # Sets an additional bind for selection the previous item in the list
-next = "None" # Sets an additional bind for selection the next item in the list
+prev = "None"        # Sets an additional bind for selection the previous item in the list
+next = "None"        # Sets an additional bind for selection the next item in the list
+modifier = "control" # Sets an additional bind for selection the next item in the list
+
+[files]
+fallback = "~/.config/sherlock/fallback.json"
+css = "~/.config/sherlock/gruvbox.css"
+alias = "~/.config/sherlock/sherlock_alias.json"
+ignore = "~/.config/sherlock/sherlockignore"

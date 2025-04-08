@@ -46,16 +46,17 @@ pub struct AppData {
 
 #[derive(Clone, Debug, Default)]
 pub struct SherlockFlags {
-    pub config: String,
-    pub fallback: String,
-    pub style: String,
-    pub ignore: String,
-    pub alias: String,
+    pub config: Option<PathBuf>,
+    pub fallback: Option<PathBuf>,
+    pub style: Option<PathBuf>,
+    pub ignore: Option<PathBuf>,
+    pub alias: Option<PathBuf>,
     pub display_raw: bool,
     pub center_raw: bool,
-    pub caching: bool,
-    pub cache: String,
+    pub cache: Option<PathBuf>,
     pub daemonize: bool,
+    pub method: Option<String>,
+    pub field: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -69,10 +70,10 @@ pub struct SherlockAlias {
 #[derive(Debug, Clone)]
 pub enum SherlockErrorType {
     EnvVarNotFoundError(String),
-    FileExistError(String),
-    FileWriteError(String),
-    FileReadError(String),
-    FileParseError(String),
+    FileExistError(PathBuf),
+    FileWriteError(PathBuf),
+    FileReadError(PathBuf),
+    FileParseError(PathBuf),
     DirReadError(String),
     DirCreateError(String),
     ResourceParseError,
@@ -87,6 +88,7 @@ pub enum SherlockErrorType {
     DBusMessageSendError(String),
     DBusMessageConstructError(String),
     HttpRequestError(String),
+    SocketRemoveError(String),
 }
 
 impl SherlockErrorType {
@@ -96,21 +98,25 @@ impl SherlockErrorType {
                 "EnvVarNotFoundError".to_string(),
                 format!("Failed to unpack environment variable \"{}\"", var),
             ),
+            SherlockErrorType::SocketRemoveError(socket) => (
+                "SocketRemoveError".to_string(),
+                format!("Failed to close socket at location \"{}\"", socket),
+            ),
             SherlockErrorType::FileExistError(file) => (
                 "FileExistError".to_string(),
-                format!("File \"{}\" does not exist", file),
+                format!("File \"{}\" does not exist", file.to_string_lossy()),
             ),
             SherlockErrorType::FileWriteError(file) => (
                 "FileWriteError".to_string(),
-                format!("Failed to write file \"{}\"", file),
+                format!("Failed to write file \"{}\"", file.to_string_lossy()),
             ),
             SherlockErrorType::FileReadError(file) => (
                 "FileReadError".to_string(),
-                format!("Failed to read file \"{}\"", file),
+                format!("Failed to read file \"{}\"", file.to_string_lossy()),
             ),
             SherlockErrorType::FileParseError(file) => (
                 "FileParseError".to_string(),
-                format!("Failed to parse file \"{}\"", file),
+                format!("Failed to parse file \"{}\"", file.to_string_lossy()),
             ),
             SherlockErrorType::DirReadError(file) => (
                 "DirReadError".to_string(),
@@ -192,6 +198,10 @@ pub struct SherlockConfig {
     pub behavior: ConfigBehavior,
     #[serde(default)]
     pub binds: ConfigBinds,
+    #[serde(default)]
+    pub files: ConfigFiles,
+    #[serde(default)]
+    pub pipe: ConfigPipe,
 }
 impl SherlockConfig {
     pub fn default() -> (Self, Vec<SherlockError>) {
@@ -219,16 +229,25 @@ impl SherlockConfig {
                     icon_size: default_icon_size(),
                 },
                 behavior: ConfigBehavior {
-                    cache: String::from("~/.cache/sherlock_desktop_cache.json"),
+                    cache: default_cache(),
                     caching: false,
                     daemonize: false,
                     animate: true,
+                    field: None,
                 },
                 binds: ConfigBinds {
                     prev: None,
                     next: None,
                     modifier: None,
                 },
+                files: ConfigFiles {
+                    config: default_config(),
+                    fallback: default_fallback(),
+                    css: default_css(),
+                    alias: default_alias(),
+                    ignore: default_ignore(),
+                },
+                pipe: ConfigPipe { method: None },
             },
             non_breaking,
         )
@@ -257,13 +276,39 @@ impl Default for ConfigDefaultApps {
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct ConfigBehavior {
     #[serde(default = "default_cache")]
-    pub cache: String,
+    pub cache: PathBuf,
     #[serde(default = "default_true")]
     pub caching: bool,
     #[serde(default)]
     pub daemonize: bool,
     #[serde(default = "default_true")]
     pub animate: bool,
+    pub field: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ConfigFiles {
+    #[serde(default = "default_config")]
+    pub config: PathBuf,
+    #[serde(default = "default_css")]
+    pub css: PathBuf,
+    #[serde(default = "default_fallback")]
+    pub fallback: PathBuf,
+    #[serde(default = "default_alias")]
+    pub alias: PathBuf,
+    #[serde(default = "default_ignore")]
+    pub ignore: PathBuf,
+}
+impl Default for ConfigFiles {
+    fn default() -> Self {
+        Self {
+            config: default_config(),
+            css: default_css(),
+            fallback: default_fallback(),
+            alias: default_alias(),
+            ignore: default_ignore(),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -274,6 +319,12 @@ pub struct ConfigBinds {
     pub next: Option<String>,
     #[serde(default)]
     pub modifier: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct ConfigPipe {
+    #[serde(default)]
+    pub method: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -317,6 +368,21 @@ where
     Ok(io::BufReader::new(file).lines())
 }
 
+pub fn home_dir() -> Result<PathBuf, SherlockError> {
+    env::var("HOME")
+        .map_err(|e| SherlockError {
+            error: SherlockErrorType::EnvVarNotFoundError(String::from("HOME")),
+            traceback: e.to_string(),
+        })
+        .map(|s| PathBuf::from(s))
+}
+pub fn parse_priority(priority: f32, count: f32, decimals: i32) -> f32 {
+    priority + 1.0 - count * 10f32.powi(-decimals)
+}
+
+// ====================
+// SECTION: DEFAULT GETTERS
+// ====================
 pub fn default_terminal() -> String {
     get_terminal().unwrap_or_default()
 }
@@ -326,12 +392,25 @@ pub fn default_teams() -> String {
 pub fn default_calendar_client() -> String {
     String::from("thunderbird")
 }
-pub fn default_cache() -> String {
-    match env::var("HOME") {
-        Ok(dir) => format!("{}/.cache/sherlock_desktop_cache.json", dir),
-        Err(_) => String::from("~/cache/sherlock_desktop_cache.json"),
-    }
+pub fn default_cache() -> PathBuf {
+    PathBuf::from("~/.cache/sherlock_desktop_cache.json")
 }
+pub fn default_config() -> PathBuf {
+    PathBuf::from("~/.config/sherlock/config.toml")
+}
+pub fn default_fallback() -> PathBuf {
+    PathBuf::from("~/.config/sherlock/fallback.json")
+}
+pub fn default_css() -> PathBuf {
+    PathBuf::from("~/.config/sherlock/main.css")
+}
+pub fn default_alias() -> PathBuf {
+    PathBuf::from("~/.config/sherlock/sherlock_alias.json")
+}
+pub fn default_ignore() -> PathBuf {
+    PathBuf::from("~/.config/sherlock/sherlockignore")
+}
+
 pub fn default_true() -> bool {
     true
 }
@@ -392,8 +471,4 @@ fn is_terminal_installed(terminal: &str) -> bool {
         .arg("--version") // You can adjust this if the terminal doesn't have a "--version" flag
         .output()
         .is_ok()
-}
-
-pub fn parse_priority(priority: f32, count: f32, decimals: i32) -> f32 {
-    priority + 1.0 - count * 10f32.powi(-decimals)
 }

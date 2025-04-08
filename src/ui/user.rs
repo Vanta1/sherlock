@@ -11,10 +11,10 @@ use std::rc::Rc;
 
 use super::tiles::{util::TextViewTileBuilder, Tile};
 use super::util::*;
-use crate::APP_STATE;
 use crate::{actions::execute_from_attrs, g_subclasses::sherlock_row::SherlockRow};
+use crate::{loader::pipe_loader::PipeData, APP_STATE};
 
-pub fn display_pipe(pipe_content: Vec<String>) {
+pub fn display_pipe(pipe_content: Vec<PipeData>, method: &str) {
     // Initialize the builder with the correct path
     let builder = Builder::from_resource("/dev/skxxtz/sherlock/ui/search.ui");
 
@@ -26,7 +26,7 @@ pub fn display_pipe(pipe_content: Vec<String>) {
 
     let keyword = search_bar.text();
 
-    let tiles = Tile::simple_text_tile(&pipe_content, "copy", &keyword);
+    let tiles = Tile::pipe_data(&pipe_content, &method, &keyword);
     for item in tiles {
         results.append(&item);
     }
@@ -35,7 +35,7 @@ pub fn display_pipe(pipe_content: Vec<String>) {
     results.focus_first();
     search_bar.grab_focus();
 
-    change_event(&search_bar, &results, pipe_content);
+    change_event(&search_bar, &results, pipe_content, &method);
 
     nav_event(results, result_viewport);
     APP_STATE.with(|state| {
@@ -49,7 +49,8 @@ pub fn display_raw<T: AsRef<str>>(content: T, center: bool) {
     let buffer = builder.content.buffer();
     builder.content.add_css_class("raw_text");
     builder.content.set_monospace(true);
-    buffer.set_text(content.as_ref());
+    let sanitized: String = content.as_ref().chars().filter(|&c| c != '\0').collect();
+    buffer.set_text(&sanitized);
     if center {
         builder.content.set_justification(Justification::Center);
     }
@@ -122,10 +123,16 @@ fn nav_event(results_ev_nav: Rc<ListBox>, result_viewport: ScrolledWindow) {
     });
 }
 
-fn change_event(search_bar: &Entry, results: &Rc<ListBox>, pipe_content: Vec<String>) {
+fn change_event(
+    search_bar: &Entry,
+    results: &Rc<ListBox>,
+    pipe_content: Vec<PipeData>,
+    method: &str,
+) {
     //Cloning:
     let results_ev_changed = Rc::clone(results);
     let pipe_content_clone = pipe_content.clone();
+    let method = method.to_string();
 
     search_bar.connect_changed(move |search_bar| {
         let current_text = search_bar.text();
@@ -133,7 +140,7 @@ fn change_event(search_bar: &Entry, results: &Rc<ListBox>, pipe_content: Vec<Str
         while let Some(row) = results_ev_changed.last_child() {
             results_ev_changed.remove(&row);
         }
-        let tiles = Tile::simple_text_tile(&pipe_content_clone, "", &current_text);
+        let tiles = Tile::pipe_data(&pipe_content_clone, &method, &current_text);
         for item in tiles {
             results_ev_changed.append(&item);
         }

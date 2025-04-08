@@ -1,4 +1,6 @@
 # Flags
+
+## Normal Flags
 | Flag         | Description | Note |
 |--------------|----------------------|------------------------------------------------|
 | --version    | Print the version of the application.| None  |
@@ -9,5 +11,13 @@
 | --ignore     | Specify the Sherlock ignore file. | Recommended location: `~/.config/sherlock/sherlockignore`            |
 | --alias      | Specify the Sherlock alias file. |Recommended location: `~/.config/sherlock/sherlock_alias.json`       |
 | --cache      | Specify the location for the caching file. Sets caching active |Recommended location: `~/.cache/sherlock_desktop_cache.json`       |
-| --daemonize      | Overrides the deamonizing value in `config.toml` | |
+| --daemonize      | Overrides the daemonizing value in `config.toml` | |
+
+## Pipe Mode Flags
+| Flag         | Description | Note |
+|--------------|----------------------|------------------------------------------------|
+| --display-raw      | Displays the piped input as a text field. Useful for term graphics. | |
+| --center | Centers the content.  | Only works with `--display-raw`|
+| --method | Specifies the method Sherlock will use to handle return presses. | |
+| --field | Selects a field as the output data.  | Only works with json formatting. |
 

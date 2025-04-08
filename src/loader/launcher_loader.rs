@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 
 use std::env;
 use std::fs::{self, File};
@@ -7,6 +8,7 @@ use std::path::PathBuf;
 use crate::actions::util::read_from_clipboard;
 use crate::launcher::audio_launcher::AudioLauncherFunctions;
 use crate::launcher::event_launcher::EventLauncher;
+use crate::launcher::process_launcher::ProcessLauncher;
 use crate::launcher::{
     app_launcher, bulk_text_launcher, clipboard_launcher, system_cmd_launcher, web_launcher,
     Launcher, LauncherType,
@@ -14,7 +16,7 @@ use crate::launcher::{
 
 use app_launcher::App;
 use bulk_text_launcher::BulkText;
-use clipboard_launcher::Clp;
+use clipboard_launcher::ClipboardLauncher;
 use simd_json;
 use simd_json::prelude::ArrayTrait;
 use system_cmd_launcher::SystemCommand;
@@ -25,19 +27,20 @@ use super::{
     util::{self, SherlockError, SherlockErrorType},
     Loader,
 };
-use crate::{CONFIG, FLAGS};
+use crate::CONFIG;
 use util::{AppData, CommandConfig};
 
 impl Loader {
     pub fn load_launchers() -> Result<(Vec<Launcher>, Vec<SherlockError>), SherlockError> {
-        let sherlock_flags = FLAGS.get().ok_or_else(|| SherlockError {
-            error: SherlockErrorType::FlagLoadError,
-            traceback: String::new(),
-        })?;
         let mut non_breaking: Vec<SherlockError> = Vec::new();
 
+        let config = CONFIG.get().ok_or_else(|| SherlockError {
+            error: SherlockErrorType::ConfigError(None),
+            traceback: String::new(),
+        })?;
+
         // Read fallback data here:
-        let (launcher_config, n) = parse_launcher_configs(sherlock_flags.fallback.as_str())?;
+        let (launcher_config, n) = parse_launcher_configs(&config.files.fallback)?;
         non_breaking.extend(n);
 
         // Read cached counter file
@@ -60,7 +63,6 @@ impl Loader {
                         if let Some(c) = CONFIG.get() {
                             apps = match c.behavior.caching {
                                 true => Loader::load_applications(
-                                    sherlock_flags,
                                     cmd.priority as f32,
                                     counts_clone,
                                     max_decimals,
@@ -68,7 +70,6 @@ impl Loader {
                                 .map_err(|e| non_breaking.push(e))
                                 .ok()?,
                                 false => Loader::load_applications_from_disk(
-                                    sherlock_flags,
                                     None,
                                     cmd.priority as f32,
                                     counts_clone,
@@ -116,10 +117,24 @@ impl Loader {
                         let clipboard_content: String = read_from_clipboard()
                             .map_err(|e| non_breaking.push(e))
                             .unwrap_or_default();
+                        let capabilities: Option<HashSet<String>> =
+                            match cmd.args.get("capabilities") {
+                                Some(Value::Array(arr)) => {
+                                    let strings: HashSet<String> = arr
+                                        .iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect();
+                                    Some(strings)
+                                }
+                                _ => None,
+                            };
                         if clipboard_content.is_empty() {
                             LauncherType::Empty
                         } else {
-                            LauncherType::Clipboard(Clp { clipboard_content })
+                            LauncherType::Clipboard(ClipboardLauncher {
+                                clipboard_content,
+                                capabilities,
+                            })
                         }
                     }
                     "teams_event" => {
@@ -141,6 +156,11 @@ impl Loader {
                             })
                         })
                         .unwrap_or(LauncherType::Empty),
+                    "process" => {
+                        let icon = cmd.args["icon"].as_str().unwrap_or("sherlock-process");
+                        let launcher = ProcessLauncher::new(icon)?;
+                        LauncherType::ProcessLauncher(launcher)
+                    }
                     _ => LauncherType::Empty,
                 };
                 let method: String = if let Some(value) = &cmd.on_return {
@@ -166,7 +186,7 @@ impl Loader {
             })
             .collect();
 
-        // get and write executioon counts if they are empty
+        // get and write execution counts if they are empty
         if counts.is_empty() {
             let counts: HashMap<String, f32> = launchers
                 .iter()
@@ -218,7 +238,7 @@ impl CounterReader {
             File::create(&self.path)
         }
         .map_err(|e| SherlockError {
-            error: SherlockErrorType::FileExistError(format!("{:?}", self.path)),
+            error: SherlockErrorType::FileExistError(self.path.clone()),
             traceback: e.to_string(),
         })?;
         let counts = match simd_json::from_reader(file).ok() {
@@ -239,30 +259,30 @@ impl CounterReader {
 }
 
 fn parse_launcher_configs(
-    fallback_path: &str,
+    fallback_path: &PathBuf,
 ) -> Result<(Vec<CommandConfig>, Vec<SherlockError>), SherlockError> {
     // Reads all the configurations of launchers. Either from fallback.json or from default
     // file.
 
     let mut non_breaking: Vec<SherlockError> = Vec::new();
 
-    fn load_user_fallback(fallback_path: &str) -> Result<Vec<CommandConfig>, SherlockError> {
+    fn load_user_fallback(fallback_path: &PathBuf) -> Result<Vec<CommandConfig>, SherlockError> {
         // Tries to load the user-specified launchers. If it failes, it returns a non breaking
         // error.
         match File::open(&fallback_path) {
             Ok(f) => simd_json::from_reader(f).map_err(|e| SherlockError {
-                error: SherlockErrorType::FileParseError(fallback_path.to_string()),
+                error: SherlockErrorType::FileParseError(fallback_path.clone()),
                 traceback: e.to_string(),
             }),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(SherlockError {
-                error: SherlockErrorType::FileExistError(fallback_path.to_string()),
+                error: SherlockErrorType::FileExistError(fallback_path.clone()),
                 traceback: format!(
                     "The file \"{}\" does not exist in the specified location.",
-                    fallback_path
+                    fallback_path.to_string_lossy()
                 ),
             }),
             Err(e) => Err(SherlockError {
-                error: SherlockErrorType::FileReadError(fallback_path.to_string()),
+                error: SherlockErrorType::FileReadError(fallback_path.clone()),
                 traceback: e.to_string(),
             }),
         }
@@ -280,12 +300,12 @@ fn parse_launcher_configs(
         })?;
         let string_data = std::str::from_utf8(&data)
             .map_err(|e| SherlockError {
-                error: SherlockErrorType::FileParseError("fallback.json".to_string()),
+                error: SherlockErrorType::FileParseError(PathBuf::from("fallback.json")),
                 traceback: e.to_string(),
             })?
             .to_string();
         serde_json::from_str(&string_data).map_err(|e| SherlockError {
-            error: SherlockErrorType::FileParseError("fallback.json".to_string()),
+            error: SherlockErrorType::FileParseError(PathBuf::from("fallback.json")),
             traceback: e.to_string(),
         })
     }
